@@ -42,7 +42,7 @@ LICENSE:
 #define STATE_SETUP     1
 #define STATE_CONFIG    2
 #define STATE_SAVE      3
-#define STATE_DIRSTART 10
+#define STATE_LEARN    10
 #define STATE_DET1     11
 #define STATE_DET2     12
 
@@ -64,7 +64,7 @@ uint8_t dccSpeed = 0;  // 0 to 120, in steps of 10.  Shifted by +1 when sent to 
 int8_t dccDirection = 1;
 uint8_t backlightState = 1;
 uint8_t state = STATE_NORMAL;
-uint8_t dirstate = STATE_DIRSTART;
+uint8_t dirstate = STATE_LEARN;
 uint8_t updateDisplay = 0;
 
 char str[17];
@@ -220,11 +220,11 @@ void loop()
 						dccSpeed = 0;
 						break;
 					case btnUP:
-						if(dccSpeed < 120)
+						if(dccSpeed <= 117)
 							dccSpeed += 10;
 						break;
 					case btnDOWN:
-						if(dccSpeed)
+						if(dccSpeed >= 10)
 							dccSpeed -= 10;
 						break;
 					case btnSELECT:
@@ -256,6 +256,7 @@ void loop()
 			lcd.print(dirstate);
 			break;
 		case STATE_SETUP:
+			dccSpeed = 0;
 			backlightState = 1;
 			dccAddrIndex = 0;
 			lcd.clear();
@@ -329,16 +330,15 @@ void loop()
 			break;
 	}
 
-	if(0 == dccSpeed)
+	if((STATE_NORMAL == state) && (0 == dccSpeed))
 	{
-		// Reset if speed = 0;
-		dirstate = STATE_DIRSTART;
+		// Reset if speed = 0, except when ramping
+		dirstate = STATE_LEARN;
 	}
 
 	switch(dirstate)
 	{
-		case STATE_DIRSTART:
-/*			Serial.println("DIRSTART");*/
+		case STATE_LEARN:
 			dccDirection = 1;
 			if(!digitalRead(DETECTOR_INPUT_PIN_1))
 			{
@@ -352,7 +352,6 @@ void loop()
 			}
 			break;
 		case STATE_DET1:
-/*			Serial.println("DET1");*/
 			if(!digitalRead(DETECTOR_INPUT_PIN_2))
 			{
 				dirstate = STATE_DET2;
@@ -360,7 +359,6 @@ void loop()
 			}
 			break;
 		case STATE_DET2:
-/*			Serial.println("DET2");*/
 			if(!digitalRead(DETECTOR_INPUT_PIN_1))
 			{
 				dirstate = STATE_DET1;
