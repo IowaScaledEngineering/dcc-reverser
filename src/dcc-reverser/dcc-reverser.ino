@@ -39,9 +39,11 @@ LICENSE:
 #define btnNONE   5
 
 #define STATE_NORMAL    0
-#define STATE_SETUP     1
-#define STATE_CONFIG    2
-#define STATE_SAVE      3
+#define STATE_RAMPDOWN  1
+#define STATE_RAMPUP    2
+#define STATE_SETUP     3
+#define STATE_CONFIG    4
+#define STATE_SAVE      5
 #define STATE_LEARN    10
 #define STATE_DET1     11
 #define STATE_DET2     12
@@ -61,11 +63,13 @@ uint16_t dccAddr[16] = {0};
 uint8_t dccAddrIndex = 0;
 
 uint8_t dccSpeed = 0;  // 0 to 120, in steps of 10.  Shifted by +1 when sent to the setSpeed function
+uint8_t dccSpeedOrig = 0;
 int8_t dccDirection = 1;
 uint8_t backlightState = 1;
 uint8_t state = STATE_NORMAL;
 uint8_t dirstate = STATE_LEARN;
 uint8_t updateDisplay = 0;
+uint8_t rampRate = 50;
 
 char str[17];
 
@@ -134,6 +138,32 @@ int lcdReadButtons()
 	
 	oldButton = button;
 	return button;
+}
+
+void printStats(void)
+{
+	sprintf(str, "ADR:%4d", dccAddr[dccAddrIndex]);
+	lcd.setCursor(0,0);
+	lcd.print(str);
+
+	sprintf(str, "SPD:%3d", dccSpeed);
+	lcd.setCursor(9,0);
+	lcd.print(str);
+
+	sprintf(str, "RMP:%4d", rampRate);
+	lcd.setCursor(0,1);
+	lcd.print(str);
+	
+	sprintf(str, "%c", dccDirection>0?'F':'R');
+	lcd.setCursor(15,1);
+	lcd.print(str);
+	
+	lcd.setCursor(10,1);
+	lcd.print(digitalRead(DETECTOR_INPUT_PIN_1)?'-':'*');
+	lcd.setCursor(12,1);
+	lcd.print(digitalRead(DETECTOR_INPUT_PIN_2)?'-':'*');
+//	lcd.setCursor(11,1);
+//	lcd.print(state);
 }
 
 void setup()
@@ -222,38 +252,56 @@ void loop()
 					case btnUP:
 						if(dccSpeed <= 117)
 							dccSpeed += 10;
+						else
+							dccSpeed = 127;
 						break;
 					case btnDOWN:
 						if(dccSpeed >= 10)
 							dccSpeed -= 10;
+						else
+							dccSpeed = 0;
 						break;
 					case btnSELECT:
-						// Toggle backlight
-						backlightState ^= 1;
+/*						backlightState ^= 1;*/
+						if(rampRate < 250)
+						{
+							rampRate += 50;
+						}
+						else
+						{
+							rampRate = 0;
+						}
 						break;
 					case btnNONE:
 						break;
 				}
 			}
-
-			sprintf(str, "ADR:%4d", dccAddr[dccAddrIndex]);
-			lcd.setCursor(0,0);
-			lcd.print(str);
-
-			sprintf(str, "SPD:%3d", dccSpeed);
-			lcd.setCursor(9,0);
-			lcd.print(str);
-
-			sprintf(str, "%c", dccDirection>0?'F':'R');
-			lcd.setCursor(15,1);
-			lcd.print(str);
-			
-			lcd.setCursor(8,1);
-			lcd.print(digitalRead(DETECTOR_INPUT_PIN_1));
-			lcd.setCursor(9,1);
-			lcd.print(digitalRead(DETECTOR_INPUT_PIN_2));
-			lcd.setCursor(11,1);
-			lcd.print(dirstate);
+			printStats();
+			break;
+		case STATE_RAMPDOWN:
+			printStats();
+			if(dccSpeed)
+			{
+				dccSpeed--;
+			}
+			else
+			{
+				dccDirection *= -1;
+				state = STATE_RAMPUP;
+			}
+			delay(rampRate);
+			break;
+		case STATE_RAMPUP:
+			printStats();
+			if(dccSpeed < dccSpeedOrig)
+			{
+				dccSpeed++;
+			}
+			else
+			{
+				state = STATE_NORMAL;
+			}
+			delay(rampRate);
 			break;
 		case STATE_SETUP:
 			dccSpeed = 0;
@@ -343,26 +391,34 @@ void loop()
 			if(!digitalRead(DETECTOR_INPUT_PIN_1))
 			{
 				dirstate = STATE_DET1;
-				dccDirection *= -1;
+				dccSpeedOrig = dccSpeed;
+				if(dccSpeed)  // Only go through ramping if there is a non-zero speed.  Keeps it from getting stuck in RAMPDOWN/RAMPUP loop if starting with sensor covered.
+					state = STATE_RAMPDOWN;
 			}
 			else if(!digitalRead(DETECTOR_INPUT_PIN_2))
 			{
 				dirstate = STATE_DET2;
-				dccDirection *= -1;
+				dccSpeedOrig = dccSpeed;
+				if(dccSpeed)
+					state = STATE_RAMPDOWN;
 			}
 			break;
 		case STATE_DET1:
 			if(!digitalRead(DETECTOR_INPUT_PIN_2))
 			{
 				dirstate = STATE_DET2;
-				dccDirection *= -1;
+				dccSpeedOrig = dccSpeed;
+				if(dccSpeed)
+					state = STATE_RAMPDOWN;
 			}
 			break;
 		case STATE_DET2:
 			if(!digitalRead(DETECTOR_INPUT_PIN_1))
 			{
 				dirstate = STATE_DET1;
-				dccDirection *= -1;
+				dccSpeedOrig = dccSpeed;
+				if(dccSpeed)
+					state = STATE_RAMPDOWN;
 			}
 			break;
 	}
