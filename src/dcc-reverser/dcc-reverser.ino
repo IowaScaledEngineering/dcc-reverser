@@ -19,6 +19,7 @@ LICENSE:
 
 *************************************************************************/
 
+#include "avr/wdt.h"
 #include <LiquidCrystal.h>
 #include <EEPROM.h>
 #include <DCCPacket.h>
@@ -70,6 +71,7 @@ uint8_t state = STATE_NORMAL;
 uint8_t dirstate = STATE_LEARN;
 uint8_t updateDisplay = 0;
 uint8_t rampRate = 50;
+uint8_t currentLimit = 0;
 
 char str[17];
 
@@ -142,28 +144,38 @@ int lcdReadButtons()
 
 void printStats(void)
 {
-	sprintf(str, "ADR:%4d", dccAddr[dccAddrIndex]);
-	lcd.setCursor(0,0);
-	lcd.print(str);
+	if(currentLimit)
+	{
+		lcd.setCursor(5,0);
+		lcd.print("CURRENT");
+		lcd.setCursor(5,1);
+		lcd.print("LIMIT!");
+	}
+	else
+	{
+		sprintf(str, "ADR:%4d", dccAddr[dccAddrIndex]);
+		lcd.setCursor(0,0);
+		lcd.print(str);
 
-	sprintf(str, "SPD:%3d", dccSpeed);
-	lcd.setCursor(9,0);
-	lcd.print(str);
+		sprintf(str, "SPD:%3d", dccSpeed);
+		lcd.setCursor(9,0);
+		lcd.print(str);
 
-	sprintf(str, "RMP:%4d", rampRate);
-	lcd.setCursor(0,1);
-	lcd.print(str);
+		sprintf(str, "RMP:%4d", rampRate);
+		lcd.setCursor(0,1);
+		lcd.print(str);
 	
-	sprintf(str, "%c", dccDirection>0?'F':'R');
-	lcd.setCursor(15,1);
-	lcd.print(str);
+		sprintf(str, "%c", dccDirection>0?'F':'R');
+		lcd.setCursor(15,1);
+		lcd.print(str);
 	
-	lcd.setCursor(10,1);
-	lcd.print(digitalRead(DETECTOR_INPUT_PIN_1)?'-':'*');
-	lcd.setCursor(12,1);
-	lcd.print(digitalRead(DETECTOR_INPUT_PIN_2)?'-':'*');
-//	lcd.setCursor(11,1);
-//	lcd.print(state);
+		lcd.setCursor(10,1);
+		lcd.print(digitalRead(DETECTOR_INPUT_PIN_1)?'-':'*');
+		lcd.setCursor(12,1);
+		lcd.print(digitalRead(DETECTOR_INPUT_PIN_2)?'-':'*');
+	//	lcd.setCursor(11,1);
+	//	lcd.print(state);
+	}
 }
 
 void setup()
@@ -182,6 +194,10 @@ void setup()
 		if(dccAddr[i] > 9999)
 			dccAddr[i] = 0;
 	}
+
+	// Enable watchdog
+	wdt_reset();
+	wdt_enable(WDTO_1S);
 
 	dps.setup();
 	dccPowerInit();
@@ -250,14 +266,14 @@ void loop()
 						dccSpeed = 0;
 						break;
 					case btnUP:
-						if(dccSpeed <= 117)
-							dccSpeed += 10;
+						if(dccSpeed <= 120)
+							dccSpeed += 5;
 						else
-							dccSpeed = 127;
+							dccSpeed = 125;
 						break;
 					case btnDOWN:
-						if(dccSpeed >= 10)
-							dccSpeed -= 10;
+						if(dccSpeed >= 5)
+							dccSpeed -= 5;
 						else
 							dccSpeed = 0;
 						break;
@@ -441,13 +457,22 @@ void loop()
 	{
 		dccPowerOff();
 		dccPowerRetry = currentMillis + 5000;
+		currentLimit = 1;
+		lcd.clear();
 	}
 
 	if (0 == dccPowerState() && dccPowerRetry <= currentMillis)
 	{
 		dccPowerOn();
+		currentLimit = 0;
+		lcd.clear();
 	}
 
+	
+	wdt_reset();
+	// Turn on the headlight
+	dps.setFunctions0to4(dccAddr[dccAddrIndex], DCC_LONG_ADDRESS, 1);
+	// Send speed
 	dps.setSpeed128(dccAddr[dccAddrIndex], DCC_LONG_ADDRESS, dccDirection*(dccSpeed + 1));  // +1 so that minimum is stop (1), not estop (0)
 	dps.update();
 }
