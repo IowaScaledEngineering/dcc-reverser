@@ -8,7 +8,7 @@
 
 BASE_NAME = dcc-reverser
 
-BOARD  = arduino:avr:megaADK
+BOARD  = arduino:avr:mega:cpu=atmega2560
 PORT   = /dev/ttyACM0
 
 ARDUINO = ~/arduino
